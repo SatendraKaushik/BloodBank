@@ -259,7 +259,8 @@ function handleSpeak(){
             } catch (error) {
                 console.error("Error fetching response:", error);
                 // Display error message
-                displayMessage("Error fetching response", 'bot-message');
+                displayMessage("please ask  a different question.", 'bot-message', 'red');
+                removeLoader();
                 // Enable submit button after error
                 submitButton.disabled = false;
             }
