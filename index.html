@@ -1,254 +1,323 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera and Bing Maps Demo</title>
+    <title>Gemini Chat Bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
+        rel="stylesheet">
     <style>
-        #map-container {
-            width: 100%;
-            height: 300px;
-            margin-top: 20px;
+        /* CSS styles for chat container */
+
+        body {
+            font-family: "Poppins", sans-serif;
+            background-color: #5c5c5c;
+            font-weight: 500;
+            margin: 0;
+            padding: 0;
+            /* font-size: large; */
         }
 
-        #descriptionInput {
-            margin-top: 10px;
+        #chat-container {
+            width: 100vh;
+            box-shadow: rgba(0, 0, 0, 0.25) 0px 54px 55px, rgba(0, 0, 0, 0.12) 0px -12px 30px, rgba(0, 0, 0, 0.12) 0px 4px 6px, rgba(0, 0, 0, 0.17) 0px 12px 13px, rgba(0, 0, 0, 0.09) 0px -3px 5px;
+            margin: 20px auto;
+            padding: 20px;
+            padding-left: 50px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background-color: #fafafa;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
 
-        #cameraPreview {
-            width: 100%;
-            max-width: 640px;
+        /* CSS styles for chat messages */
+        .message {
+            margin-bottom: 10px;
         }
 
-        #image-container, #location-container {
-            margin: 20px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            text-align: center;
+        .user-message {
+            text-align: right;
+            color: #0066ff;
         }
 
-        #selected-image {
-            max-width: 100%;
-            max-height: 400px;
+        .bot-message {
+            text-align: left;
+            color: #000000;
+            overflow: hidden;
+            /* Hide overflow to prevent scrollbar */
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Input and button styles */
+        #user-input {
+            width: 70%;
+            padding: 8px;
+           
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        #user-input:focus {
+            border-color: #0066ff;
+        }
+
+        #submit-btn,#speak-btn {
+            padding: 8px 15px;
+            background-color: #0066ff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        #submit-btn:hover {
+            background-color: #0052cc;
+        }
+        #speak-btn:hover{
+            background-color: #0052cc;
         }
     </style>
-    <script src="https://cdn.emailjs.com/dist/email.min.js"></script>
-    <script type="text/javascript">
-        emailjs.init("user_your_emailjs_user_id"); // Replace with your Email.js user ID
-
-        // Define position and state in the global scope
-        let position;
-        let state;
-
-        // Additional variable to track whether the camera is open
-        let isCameraOpen = false;
-
-        // Separate capture function to keep camera screen open
-        function capturePhoto() {
-            if (isCameraOpen) {
-                captureImage();
-            } else {
-                openFrontCamera();
-            }
-        }
-    </script>
 </head>
+
 <body>
-    <h1>Camera and Bing Maps Demo</h1>
+    <div id="chat-container">
+        <div id="chat-messages"></div>
 
-    <!-- Image container -->
-    <div id="image-container">
-        <video id="cameraPreview" style="display: none;"></video>
-        <button onclick="capturePhoto()">Capture Photo</button>
-        <canvas id="captured-image" style="display: none;"></canvas>
-        <img id="selected-image" style="display: none;" alt="Captured Image">
-        <input type="text" id="descriptionInput" placeholder="Enter Description">
-        <button onclick="shareImage()">Share Photo via Email</button>
+        <form id="myForm">
+            <input type="text" id="user-input" placeholder="Type your message...">
+            <button type="submit" id="submit-btn">Send</button>
+            <button type="button" id="speak-btn">speak</button>
+        </form>
     </div>
 
-    <!-- Location container -->
-    <div id="location-container">
-        <p id="location-text"></p>
-    </div>
+    <script type="module">
 
-    <!-- Map container -->
-    <div id="map-container"></div>
+        const SpeechRecognition = window.SpeechRecognition || webkitSpeechRecognition;
+        const SpeechGrammarList = window.SpeechGrammarList || webkitSpeechGrammarList;
+        const SpeechRecognitionEvent = window.SpeechRecognitionEvent || webkitSpeechRecognitionEvent;
 
-    <script>
-        let map;
-        let videoStream;
-        let imageCapture;
+        const diagnostic = document.querySelector('.output');
+        const bg = document.querySelector('html');
+        const hints = document.querySelector('.hints');
 
-        function initMap() {
-            map = new Microsoft.Maps.Map(document.getElementById('map-container'), {
-                credentials: 'ArSGwElpgs65UXUwCnZ4ibhLzkmxuScTxz0rCq_kgJy35pa2tSq229GIMzMPVQ8P',
-                center: new Microsoft.Maps.Location(0, 0),
-                zoom: 2
-            });
+        const recognition = new SpeechRecognition();
+        const speechRecognitionList = new SpeechGrammarList();
+
+
+        //recognition.grammars = speechRecognitionList;
+        recognition.continuous = true;
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 3;
+
+        //speechRecognition.continuous = false;
+
+        var startCounter = 0;
+
+        // Import GoogleGenerativeAI class
+        import { GoogleGenerativeAI } from "https://cdn.skypack.dev/@google/generative-ai";
+
+        // Access your API key
+        const API_KEY = "AIzaSyC8VcvCvdcVUdq-P1IZ5qWPCjbqXhSEjis";
+
+        // Get reference to the input and button elements
+        const userInputField = document.getElementById('user-input');
+        const chatMessagesDiv = document.getElementById('chat-messages');
+        const submitButton = document.getElementById('submit-btn');
+        const speakButton =document.getElementById("speak-btn") ;
+
+        // Add event listener to the form
+        document.getElementById('myForm').addEventListener('submit', handleSubmit);
+        document.getElementById("speak-btn").addEventListener('click', handleSpeak);
+
+
+
+
+        // lsiten 
+
+
+        function startSpeech() {
+            if (startCounter == 0) {
+                recognition.start();
+            }
+
         }
-        // Request access to the camera
-        function openCamera() {
-    navigator.mediaDevices.enumerateDevices()
-        .then(devices => {
-            let videoSource = null;
 
-            // Check for back camera first
-            devices.forEach(device => {
-                if (device.kind === 'videoinput' && device.label.includes('back')) {
-                    videoSource = device.deviceId;
-                }
-            });
+        function stopFun() {
+            if (startCounter == 0) {
+                recognition.start();
+            }
 
-            // If back camera is not found, use any available camera
-            const constraints = {
-                video: {
-                    deviceId: videoSource ? { exact: videoSource } : undefined,
-                    facingMode: videoSource ? undefined : 'user'
-                }
-            };
+        }
 
-            return navigator.mediaDevices.getUserMedia(constraints);
-        })
-        .then(stream => {
-            videoStream = stream;
-            const cameraPreview = document.getElementById('cameraPreview');
-            cameraPreview.style.display = 'block';
-            cameraPreview.srcObject = stream;
-            imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
-            isCameraOpen = true;
-        })
-        .catch(error => {
-            console.error('Error accessing camera:', error);
-        });
+        recognition.onresult = function (event) {
+            let color = event.results[0][0].transcript;
+
+
+            // diagnostic.textContent = 'Result received: ' + color + '.';
+            // bg.style.backgroundColor = color;
+            startCounter = 0;
+            recognition.stop();
+            console.log('Confidence: ' + event.results[0][0].confidence);
+            displayMessage(color, 'user-message');
+            run(color);
+            // speak(color);
+        };
+        recognition.onspeechend = function () {
+            console.log('111', event.results);
+            recognition.stop();
+        }
+
+        recognition.onspeechend = function () {
+            recognition.stop();
+        }
+
+        recognition.onnomatch = function (event) {
+            diagnostic.textContent = 'I didn\'t recognize that color.';
+        }
+
+        recognition.onerror = function (event) {
+            diagnostic.textContent = 'Error occurred in recognition: ' + event.error;
+        }
+
+
+
+function handleSpeak(){
+    
+    startSpeech();
+    
 }
+        function handleSubmit(event) {
+            // Prevent the default form submission behavior
+            event.preventDefault();
 
-        function closeCamera() {
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
-                videoStream = null;
-                const cameraPreview = document.getElementById('cameraPreview');
-                cameraPreview.style.display = 'none';
-                isCameraOpen = false;
+            // Get the value of the input field
+            const userInput = userInputField.value;
+
+            // Clear the input field
+            userInputField.value = '';
+
+            // Display user message
+            displayMessage(userInput, 'user-message');
+
+            // Disable submit button during bot's response
+            submitButton.disabled = true;
+
+            // Call the 'run' function and pass the input value as an argument
+            run(userInput);
+        }
+
+        async function run(message) {
+            // Access your API key (see "Set up your API key" above)
+            const genAI = new GoogleGenerativeAI(API_KEY);
+
+            // For text-only input, use the gemini-pro model
+            const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+            const prompt = message;
+
+            try {
+                // Display loader animation while fetching response
+                displayBotResponseWithLoader();
+
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                const text = await response.text();
+                const limitedInput = text.slice(0, 350);
+                // Display bot response
+                displayBotResponse(limitedInput);
+                
+                // Remove loader anim;ation
+                removeLoader();
+                // Enable submit button after bot's response
+                submitButton.disabled = false;
+            } catch (error) {
+                console.error("Error fetching response:", error);
+                // Display error message
+                displayMessage("Error fetching response", 'bot-message');
+                // Enable submit button after error
+                submitButton.disabled = false;
             }
         }
 
-        function captureImage() {
-            imageCapture.takePhoto()
-            .then(blob => {
-                const url = URL.createObjectURL(blob);
-
-                // Display the captured image
-                displayCapturedImage(url);
-
-                // Stop the camera stream
-                closeCamera();
-
-                // Fetch location using device's geolocation
-                getLocation();
-            })
-            .catch(error => console.error('Error capturing image:', error));
-        }
-
-        function displayCapturedImage(url) {
-            const capturedImage = document.getElementById('selected-image');
-            capturedImage.style.display = 'block';
-            capturedImage.src = url;
-        }
-
-        function getLocation() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                pos => {
-                    const coordinates = [pos.coords.latitude, pos.coords.longitude];
-
-                    // Fetch additional location details using OpenCage Geocoding API
-                    fetchLocationDetails(coordinates, () => {
-                        // Display the map (this will be called after location details are fetched)
-                        displayMap(coordinates);
-
-                        // Stop the camera stream
-                        closeCamera();
-                    });
-                },
-                error => console.error('Error getting location:', error)
-                );
-            } else {
-                console.error('Geolocation is not supported by this browser.');
+        function removeLoader() {
+            const loader = document.querySelector('.loader');
+            if (loader) {
+                loader.parentNode.removeChild(loader);
             }
         }
 
-        function fetchLocationDetails(coordinates, callback) {
-            // Replace 'YOUR_OPENCAGE_API_KEY' with your actual OpenCage API key
-            const apiKey = 'dbf5cac2f04c479c8c514f6567eedef3';
-            const apiUrl = `https://api.opencagedata.com/geocode/v1/json?q=${coordinates[0]}+${coordinates[1]}&key=${apiKey}`;
 
-            fetch(apiUrl)
-                .then(response => response.json())
-                .then(data => {
-                    const locationDetails = data.results[0].components;
-                    state = locationDetails.state; // Update global state variable
-                    const country = locationDetails.country;
-                    const city = locationDetails.city;
-
-                    // Display location text with additional details
-                    const locationText = document.getElementById('location-text');
-                    locationText.textContent = `Location: (${coordinates[0]}, ${coordinates[1]}) - ${city}, ${state}, ${country}`;
-
-                    // Continue with the email sending callback
-                    callback(coordinates);
-                })
-                .catch(error => console.error('Error fetching location details:', error));
+        function displayMessage(message, className) {
+            const messageElement = document.createElement('div');
+            messageElement.textContent = message;
+            messageElement.classList.add('message', className);
+            chatMessagesDiv.appendChild(messageElement);
         }
 
-        function displayMap(coordinates) {
-            const mapContainer = document.getElementById('map-container');
-            const mapUrl = `https://www.bing.com/maps/embed/viewer.aspx?v=3&cp=${coordinates[0]}~${coordinates[1]}&lvl=15&sty=r&typ=d&pp=`;
+        function displayBotResponseWithLoader() {
+            const botMessageContainer = document.createElement('div');
+            botMessageContainer.classList.add('message', 'bot-message');
 
-            // mapContainer.innerHTML = `<iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="${mapUrl}"></iframe>`;
+            const loader = document.createElement('div');
+            loader.classList.add('loader');
+            botMessageContainer.appendChild(loader);
+
+            chatMessagesDiv.appendChild(botMessageContainer);
         }
 
-        function shareImage() {
-    const capturedImage = document.getElementById('selected-image');
-    const locationText = document.getElementById('location-text');
-    const descriptionInput = document.getElementById('descriptionInput');
+        function displayBotResponse(response) {
+            // Remove special characters using regular expression
+            const sanitizedResponse = response.replace(/[^\w\s]/gi, '');
+            speak(sanitizedResponse);
+            const botMessageContainer = document.createElement('div');
+            botMessageContainer.classList.add('message', 'bot-message');
+            botMessageContainer.textContent = sanitizedResponse;
 
-    const location = locationText.textContent;
-    const description = descriptionInput.value;
+            chatMessagesDiv.appendChild(botMessageContainer);
+        }
 
-    // Convert the image to a PDF blob
-    imageToPdfBlob(capturedImage.src, pdfBlob => {
-        const pdfBlobUrl = URL.createObjectURL(pdfBlob);
+        //  speak 
 
-        // Construct the mailto link
-        const subject = encodeURIComponent('Photo Sharing');
-        const body = encodeURIComponent(`Description: ${description}\nLocation: ${location}\nPosition: ${position}\nState: ${state}`);
-        const mailtoLink = `mailto:?subject=${subject}&body=${body}&attachment=${pdfBlobUrl}`;
+        function speak(TextToSpeak) {
+            TextToSpeak = TextToSpeak;
+            // Create a SpeechSynthesisUtterance
+            const utterance = new SpeechSynthesisUtterance(TextToSpeak);
 
-        // Open the default email client
-        window.location.href = mailtoLink;
-    });
-}
+            // Select a voice
+            const voices = speechSynthesis.getVoices();
+            utterance.voice = voices[2]; // Choose a specific voice
 
-function imageToPdfBlob(imageSrc, callback) {
-    const img = new Image();
-    img.onload = function () {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0, img.width, img.height);
+            // Speak the text
+            speechSynthesis.speak(utterance);
+        }
 
-        // Convert the image to PDF using jsPDF library
-        const pdf = new jsPDF();
-        pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, img.width, img.height);
-        pdf.output('blob', callback);
-    };
-    img.src = imageSrc;
-}
-
-
-        window.addEventListener('unload', closeCamera);
     </script>
-    <script type="text/javascript" src="https://www.bing.com/api/maps/mapcontrol?key=YOUR_BING_MAPS_API_KEY&callback=initMap" async defer></script>
 </body>
+
 </html>
